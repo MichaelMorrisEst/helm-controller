@@ -1217,18 +1217,8 @@ jobs:
           fi
 
           kubectl -n helm-system apply -f config/testdata/$test_name/upgrade.yaml
-          echo -n ">>> Waiting for expected conditions"
-          count=0
-          until [ 'true' == "$( kubectl -n helm-system get helmrelease/$test_name -o json | jq '.status.upgradeFailures == 1 and .status.installFailures == 1 and ( .status.conditions | map( { (.type): .status } ) | add | .Released=="False" and .Ready=="False" )' )" ]; do
-            echo -n '.'
-            sleep 5
-            count=$((count + 1))
-            if [[ ${count} -eq 24 ]]; then
-              echo ' No more retries left!'
-              exit 1
-            fi
-          done
-          echo ' done'
+
+          kubectl -n helm-system wait helmreleases/$test_name --for=condition=ready --timeout=4m
 
           # Validate release was uninstalled/reinstalled.
           HISTORY=$(helm -n helm-system history -o json $test_name)
@@ -1238,7 +1228,7 @@ jobs:
             exit 1
           fi
           LAST_REVISION_STATUS=$(echo "$HISTORY" | jq -r 'last | .status')
-          if [ "$LAST_REVISION_STATUS" != "failed" ]; then
+          if [ "$LAST_REVISION_STATUS" != "deployed" ]; then
             echo -e "Unexpected last revision status: $LAST_REVISION_STATUS"
             exit 1
           fi
@@ -1275,18 +1265,7 @@ jobs:
           fi
 
           kubectl -n helm-system apply -f config/testdata/$test_name/upgrade-reinstall.yaml
-          echo -n ">>> Waiting for expected conditions"
-          count=0
-          until [ 'true' == "$( kubectl -n helm-system get helmrelease/$test_name -o json | jq '.status.upgradeFailures == 1 and .status.installFailures == 1 and ( .status.conditions | map( { (.type): .status } ) | add | .Released=="False" and .Ready=="False" )' )" ]; do
-            echo -n '.'
-            sleep 5
-            count=$((count + 1))
-            if [[ ${count} -eq 24 ]]; then
-              echo ' No more retries left!'
-              exit 1
-            fi
-          done
-          echo ' done'
+          kubectl -n helm-system wait helmreleases/$test_name --for=condition=ready --timeout=4m
 
           # Validate release was uninstalled/reinstalled.
           HISTORY=$(helm -n helm-system history -o json $test_name)
@@ -1296,7 +1275,7 @@ jobs:
             exit 1
           fi
           LAST_REVISION_STATUS=$(echo "$HISTORY" | jq -r 'last | .status')
-          if [ "$LAST_REVISION_STATUS" != "failed" ]; then
+          if [ "$LAST_REVISION_STATUS" != "deployed" ]; then
             echo -e "Unexpected last revision status: $LAST_REVISION_STATUS"
             exit 1
           fi
@@ -1357,9 +1336,11 @@ jobs:
         run: |
           kubectl -n helm-system logs deploy/source-controller
           kubectl -n helm-system logs deploy/helm-controller
+          kubectl -n helm-system describe Deployment/helm-system/upgrade-chart-name-change-pod2info
       - name: Debug failure
         if: failure()
         run: |
+          helm list --all-namespaces
           kubectl -n helm-system get helmrepositories -oyaml || true
           kubectl -n helm-system get helmcharts -oyaml || true
           kubectl -n helm-system get helmreleases -oyaml || true
